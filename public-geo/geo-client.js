@@ -98,7 +98,7 @@
   let sphere = null, step = 0;
   function showSphere(s) {
     $("#photo").classList.add("hidden"); $("#pano").classList.add("hidden"); $("#thumbs").innerHTML = ""; $("#sphere").classList.remove("hidden");
-    $(".vhint").textContent = "Drag to look around · scroll to zoom · ◀ ▶ to walk";
+    $(".vhint").textContent = "Drag to look around · double-click to walk · ◀ ▶";
     step = s.loc.start; loadStep(s, "hd");
     $("#walk").classList.toggle("hidden", !(s.set.move && s.loc.n > 1));
   }
@@ -111,6 +111,14 @@
     $("#wPos").textContent = `${step - s.loc.start >= 0 ? "+" : ""}${step - s.loc.start} steps`;
     $("#wBack").disabled = step <= 0; $("#wFwd").disabled = step >= s.loc.n - 1;
   }
+  // double-click in the 360° photo: walk forwards (or back if you click behind you)
+  $("#sphere").addEventListener("dblclick", (e) => {
+    if (S?.loc?.kind !== "pano" || !S.set.move || !sphere) return;
+    let yaw = 0; try { yaw = sphere.mouseEventToCoords(e)[1]; } catch {}
+    const fwd = Math.abs(((yaw % 360) + 540) % 360 - 180) < 90;
+    if (fwd && step < S.loc.n - 1) step++; else if (!fwd && step > 0) step--; else return toast("You can't go further this way");
+    loadStep(S, "hd");
+  });
   $("#wBack").addEventListener("click", () => { if (S?.loc?.kind === "pano" && step > 0) { step--; loadStep(S, "hd"); } });
   $("#wFwd").addEventListener("click", () => { if (S?.loc?.kind === "pano" && step < S.loc.n - 1) { step++; loadStep(S, "hd"); } });
   $("#wHome").addEventListener("click", () => { if (S?.loc?.kind === "pano") { step = S.loc.start; loadStep(S, "hd"); } });
@@ -119,14 +127,42 @@
   function showMly(s) {
     for (const id of ["#photo", "#pano", "#sphere", "#walk"]) $(id).classList.add("hidden");
     $("#thumbs").innerHTML = ""; $("#mly").classList.remove("hidden");
-    $(".vhint").textContent = s.set.move ? "Drag to look around · click the arrows to walk" : "Drag to look around · scroll to zoom";
+    $(".vhint").textContent = s.set.move ? "Drag to look around · double-click where you want to go" : "Drag to look around · scroll to zoom";
     if (!mly) {
-      mly = new mapillary.Viewer({ accessToken: s.loc.token, container: "mly", imageId: s.loc.id, component: { cover: false, bearing: false, zoom: true, sequence: s.set.move, direction: s.set.move, spatial: false, image: true } });
+      // no sequence player (that one walks by itself); arrows + double-click like Street View
+      mly = new mapillary.Viewer({ accessToken: s.loc.token, container: "mly", imageId: s.loc.id, component: { cover: false, bearing: false, zoom: true, sequence: false, direction: s.set.move, spatial: false, image: true, keyboard: { keyPlay: false, keySequenceNavigation: false } } });
+      mly.on("dblclick", (e) => { if (S?.loc?.kind === "mly" && S.set.move) mlyWalk(e); });
     } else {
       mly.moveTo(s.loc.id).catch(() => {});
-      ["sequence", "direction"].forEach((c) => (s.set.move ? mly.activateComponent(c) : mly.deactivateComponent(c)));
+      s.set.move ? mly.activateComponent("direction") : mly.deactivateComponent("direction");
     }
     setTimeout(() => mly && mly.resize(), 100);
+  }
+  // double-click: walk to the nearest photo in the spot you clicked
+  let walking = false;
+  async function mlyWalk(e) {
+    if (walking) return; walking = true;
+    try {
+      const [pos, bear, fov] = await Promise.all([mly.getPosition(), mly.getBearing(), mly.getFieldOfView()]);
+      const cur = (await mly.getImage())?.id;
+      const w = $("#mly").clientWidth || 1, px = e.pixelPoint ? e.pixelPoint[0] : w / 2;
+      const dir = ((bear + (px / w - 0.5) * fov) * Math.PI) / 180;
+      let dist = 18;
+      if (e.lngLat) { const dx = (e.lngLat.lng - pos.lng) * 111320 * Math.cos((pos.lat * Math.PI) / 180), dy = (e.lngLat.lat - pos.lat) * 110540; dist = Math.max(6, Math.min(60, Math.hypot(dx, dy))); }
+      const tl = { lat: pos.lat + (Math.cos(dir) * dist) / 110540, lng: pos.lng + (Math.sin(dir) * dist) / (111320 * Math.cos((pos.lat * Math.PI) / 180)) };
+      flash(e.pixelPoint);
+      for (const r of [0.00025, 0.0006]) {
+        const bbox = [tl.lng - r, tl.lat - r, tl.lng + r, tl.lat + r].map((v) => v.toFixed(6)).join(",");
+        const j = await (await fetch(`https://graph.mapillary.com/images?access_token=${encodeURIComponent(S.loc.token)}&fields=id,computed_geometry,geometry,is_pano&limit=60&bbox=${bbox}`)).json();
+        const m = (j.data || []).filter((x) => x.id !== cur).map((x) => { const c = (x.computed_geometry || x.geometry).coordinates; return { id: x.id, d: Math.hypot((c[0] - tl.lng) * Math.cos((tl.lat * Math.PI) / 180), c[1] - tl.lat) * 111000 + (x.is_pano ? 0 : 25) }; }).sort((a, b) => a.d - b.d)[0];
+        if (m) { await mly.moveTo(m.id).catch(() => {}); return; }
+      }
+      toast("No photos there, try another spot");
+    } catch { } finally { walking = false; }
+  }
+  function flash(pt) {
+    if (!pt) return; const d = document.createElement("div"); d.className = "walkdot"; d.style.left = pt[0] + "px"; d.style.top = pt[1] + "px";
+    $("#mly").appendChild(d); setTimeout(() => d.remove(), 700);
   }
   function showPhotos(s) {
     $("#sphere").classList.add("hidden"); $("#mly").classList.add("hidden"); $("#walk").classList.add("hidden"); $(".vhint").textContent = "Scroll or pinch to zoom · drag to look around";

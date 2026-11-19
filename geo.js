@@ -83,10 +83,13 @@ async function mlyNear(lat, lon) {
   if (!r.ok) throw new Error("mapillary tiles " + r.status);
   const vt = new VectorTile(new Pbf(Buffer.from(await r.arrayBuffer())));
   const layer = vt.layers.image; if (!layer) return null;
-  const panos = [];
-  for (let i = 0; i < layer.length; i++) { const f = layer.feature(i); if (f.properties.is_pano) panos.push(f); }
-  if (!panos.length) return null;
-  const f = panos[Math.floor(Math.random() * panos.length)], g = f.toGeoJSON(t.x, t.y, t.z).geometry.coordinates;
+  // only 360° photos that belong to a longer series, so you can always walk on from there
+  const seqs = new Map();
+  for (let i = 0; i < layer.length; i++) { const f = layer.feature(i); if (!f.properties.is_pano) continue; const k = f.properties.sequence_id || "x" + i; if (!seqs.has(k)) seqs.set(k, []); seqs.get(k).push(f); }
+  const good = [...seqs.values()].filter((a) => a.length >= 8);
+  if (!good.length) return null;
+  const seq = good[Math.floor(Math.random() * good.length)].sort((a, b) => (a.properties.captured_at || 0) - (b.properties.captured_at || 0));
+  const f = seq[2 + Math.floor(Math.random() * (seq.length - 4))], g = f.toGeoJSON(t.x, t.y, t.z).geometry.coordinates;
   return { kind: "mly", id: String(f.properties.id), lat: g[1], lon: g[0], credit: `https://www.mapillary.com/app/?pKey=${f.properties.id}` };
 }
 async function streetView(lat, lon) {
@@ -103,7 +106,7 @@ async function fill() {
   try {
     for (const reg of Object.keys(pools).sort((a, b) => pools[a].length - pools[b].length)) {
       if (pools[reg].length >= 6) continue;
-      const l = await findLocation(reg, 6); if (l) pools[reg].push(l);
+      const l = await findLocation(reg, 12); if (l) pools[reg].push(l);
       await sleep(4000);
     }
   } finally { filling = false; }
@@ -112,34 +115,26 @@ setInterval(fill, 20000); setTimeout(fill, 3000);
 async function pickLocation(region) {
   const p = pools[region] || pools.world;
   if (p.length) { setTimeout(fill, 1000); return p.shift(); }
-  return findLocation(region, 6);
+  return findLocation(region, 16);
 }
 async function findLocation(region, maxTries) {
   if (process.env.GEO_MOCK === "pano") return { kind: "pano", lat: 50.85, lon: 4.35, start: 1, steps: [0, 1, 2].map(() => ({ hd: "mockpano", sd: "mockpano", yaw: 0 })), credit: "https://panoramax.xyz" };
   if (process.env.GEO_MOCK) return { kind: "photo", lat: 50.85 + Math.random(), lon: 4.35 + Math.random(), photos: ["mock", "mock"], credit: "https://commons.wikimedia.org" };
   const R = REGIONS[region] || REGIONS.world;
   for (let tries = 0; tries < maxTries; tries++) {
-    if (tries) await sleep(1200 * tries);
+    if (tries) await sleep(Math.min(2500, 300 + 250 * tries));
     const base = R.list[Math.floor(Math.random() * R.list.length)];
     const lat = base[0] + (Math.random() - 0.5) * 2 * R.jitter, lon = base[1] + (Math.random() - 0.5) * 2 * R.jitter;
     try {
       if (GKEY) { const sv = await streetView(lat, lon); if (sv) return { kind: "sv", ...sv }; continue; }
-      if (MLY && tries < maxTries - 1) {
-        const j = R.jitter > 0.1 ? 0.04 : 0.02;
+      // only walkable 360° imagery (no loose photos you can't move in)
+      const j = R.jitter > 0.1 ? 0.04 : 0.02;
+      if (MLY && tries % 4 !== 3) {
         const m = await mlyNear(base[0] + (Math.random() - 0.5) * j * 2, base[1] + (Math.random() - 0.5) * j * 2);
         if (m) return m; continue;
       }
-      if (tries < maxTries - 1) { // 360° first: search around the town centre, where most street pictures are
-        const j = R.jitter > 0.1 ? 0.04 : 0.02;
-        const pv = await panoNear(base[0] + (Math.random() - 0.5) * j, base[1] + (Math.random() - 0.5) * j, R.jitter > 0.1 ? 0.08 : 0.04);
-        if (pv) return pv; continue;
-      }
-      const ps = await photosNear(lat, lon, 10000);
-      if (!ps.length) continue;
-      const main = ps[Math.floor(Math.random() * ps.length)];
-      // extra foto's uit dezelfde buurt (binnen 1,5 km) als hint
-      const near = ps.filter((p) => p !== main && dist(p, main) < 1.5).sort(() => Math.random() - 0.5).slice(0, 2);
-      return { kind: "photo", lat: main.lat, lon: main.lon, photos: [main, ...near].map((p) => p.url), credit: main.page };
+      const pv = await panoNear(base[0] + (Math.random() - 0.5) * j, base[1] + (Math.random() - 0.5) * j, R.jitter > 0.1 ? 0.08 : 0.04);
+      if (pv && pv.steps.length >= 6) return pv;
     } catch (e) { console.warn("geo pick", e.message); if (/429/.test(e.message)) await sleep(5000); }
   }
   return null;

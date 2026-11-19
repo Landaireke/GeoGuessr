@@ -78,3 +78,7 @@ button{font:inherit;cursor:pointer}
 #mly .mapillary-bearing-indicator-container{display:none}
 
 .ltop{margin-top:10px;padding:10px;border-radius:10px;background:#0d1b2a;display:flex;flex-direction:column;gap:3px}
+/* double-click to walk: little ripple where you clicked */
+#mly{position:relative}
+.walkdot{position:absolute;width:44px;height:44px;margin:-22px 0 0 -22px;border-radius:50%;border:3px solid #fff;box-shadow:0 0 12px #0008;pointer-events:none;z-index:5;animation:walkdot .7s ease-out forwards}
+@keyframes walkdot{from{transform:scale(.3);opacity:1}to{transform:scale(1.4);opacity:0}}
