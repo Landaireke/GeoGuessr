@@ -1,0 +1,78 @@
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:#0d1b2a;color:#eef3f8;font:500 15px/1.4 "Trebuchet MS",system-ui,sans-serif;overflow:hidden}
+button{font:inherit;cursor:pointer}
+.hidden{display:none!important}
+#app{height:100%;display:flex;flex-direction:column}
+.top{display:flex;align-items:center;gap:14px;padding:8px 14px;background:linear-gradient(90deg,#123b5c,#1d6b5a);box-shadow:0 2px 10px #0006;z-index:1000}
+.logo{font-size:20px;letter-spacing:.5px}
+.hdr{flex:1;color:#cfe6ff}
+.timer{font:800 20px monospace;padding:4px 12px;border-radius:10px;background:#0008}
+.timer.low{background:#b3001b;animation:pulse 1s infinite}
+@keyframes pulse{50%{opacity:.6}}
+.view{flex:1;min-height:0;position:relative}
+.card{background:#132a40;border:1px solid #2c4a68;border-radius:16px;padding:16px;box-shadow:0 10px 30px #0005}
+#vLobby{display:grid;grid-template-columns:1.4fr 1fr;gap:14px;padding:14px;overflow:auto;align-items:start}
+.lobby h1{margin:0 0 4px}
+.muted{color:#9fb6cc}.small{font-size:12px}.center{text-align:center}
+.players{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}
+.pl{display:flex;align-items:center;gap:6px;padding:6px 12px;border-radius:20px;background:#0d1b2a;border:2px solid var(--c)}
+.pl i{width:12px;height:12px;border-radius:50%;background:var(--c)}
+.pl.off{opacity:.45}
+.settings{display:grid;gap:8px;margin:10px 0}
+.srow{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 12px;background:#0d1b2a;border-radius:10px}
+.seg{display:flex;gap:4px;flex-wrap:wrap}
+.seg button{padding:5px 10px;border-radius:8px;border:1px solid #2c4a68;background:#1a3550;color:#dfeaf5}
+.seg button.on{background:#2fbf71;border-color:#2fbf71;color:#002010;font-weight:800}
+.seg button:disabled{cursor:default}
+.row{display:flex;gap:10px;justify-content:center;align-items:center;margin-top:12px}
+.btn{padding:10px 20px;border-radius:12px;border:0;background:#2fbf71;color:#04210f;font-weight:900;letter-spacing:.5px;box-shadow:0 4px 0 #1b7a47}
+.btn:disabled{background:#4b5b6b;color:#9aa;box-shadow:0 4px 0 #333}
+.btn.big{font-size:20px;padding:12px 34px}
+.btn.ghost{background:#1a3550;color:#dfeaf5;box-shadow:0 4px 0 #0a1a2a}
+.chat{display:flex;flex-direction:column;height:min(520px,80vh)}
+.clist{flex:1;overflow:auto;display:flex;flex-direction:column;gap:4px}
+.clist div b{color:var(--c)}.clist .sys{color:#9fb6cc;font-style:italic}
+.cform{display:flex;gap:6px;margin-top:8px}.cform input{flex:1;min-width:0;padding:9px;border-radius:10px;border:1px solid #2c4a68;background:#0d1b2a;color:#fff;font:inherit}
+.loader{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.globe{font-size:90px;animation:spin 2s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.viewer{position:absolute;inset:0;background:#000;overflow:hidden;cursor:grab}
+.viewer img{position:absolute;left:50%;top:50%;max-width:none;transform-origin:0 0;user-select:none;-webkit-user-drag:none}
+.pano{position:absolute;inset:0}
+.thumbs{position:absolute;left:12px;bottom:12px;display:flex;gap:8px;z-index:5}
+.thumbs button{width:70px;height:50px;border-radius:8px;border:3px solid #fff4;background:#000 center/cover}
+.thumbs button.on{border-color:#2fbf71}
+.vhint{position:absolute;left:50%;top:10px;transform:translateX(-50%);padding:4px 10px;border-radius:8px;background:#0008;font-size:12px;color:#ccc;pointer-events:none}
+.mapbox{position:absolute;right:14px;bottom:14px;width:320px;height:230px;display:flex;flex-direction:column;gap:8px;z-index:10;transition:width .25s,height .25s;opacity:.85}
+.mapbox:hover,.mapbox.big{width:min(720px,70vw);height:min(500px,70vh);opacity:1}
+.gmap{flex:1;border-radius:12px;border:3px solid #fff;box-shadow:0 8px 30px #000a}
+.guess{width:100%}
+.pin{position:absolute;right:6px;top:6px;z-index:500;width:34px;height:34px;border-radius:8px;border:0;background:#fff;color:#000;font-size:18px}
+.donebar{position:absolute;left:12px;top:12px;display:flex;gap:6px;z-index:5}
+.donebar span{padding:4px 10px;border-radius:14px;background:#000a;border:2px solid var(--c);font-size:13px}
+.donebar span.ok::after{content:" ✓";color:#2fbf71}
+#vResult,#vFinal{display:grid;grid-template-columns:1.6fr 1fr}
+.rmap{min-height:0}
+.rpanel{margin:12px;overflow:auto}
+.rpanel h2{margin:0 0 10px}
+.rlist{display:flex;flex-direction:column;gap:6px}
+.rr{display:grid;grid-template-columns:22px 1fr auto auto;gap:10px;align-items:center;padding:8px 10px;background:#0d1b2a;border-radius:10px;border-left:5px solid var(--c)}
+.rr .pts{font-weight:900;color:#ffd84d}.rr .km{color:#9fb6cc;font-size:13px}
+.bar{height:6px;border-radius:3px;background:#2fbf71;margin-top:3px}
+.podium{display:flex;justify-content:center;align-items:flex-end;gap:10px;margin:14px 0}
+.podium div{display:flex;flex-direction:column;align-items:center;justify-content:flex-end;width:90px;border-radius:10px 10px 0 0;background:var(--c);color:#000;font-weight:900;padding:6px;text-align:center;animation:rise .8s backwards}
+@keyframes rise{from{transform:scaleY(0);transform-origin:bottom}}
+.fatal{position:fixed;inset:0;z-index:5000;display:flex;align-items:center;justify-content:center;background:#0d1b2a;text-align:center;padding:20px}
+.toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);padding:8px 16px;border-radius:10px;background:#000c;z-index:5000}
+.gpin{width:22px;height:22px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);border:3px solid #fff;box-shadow:0 2px 6px #000a}
+.flag{font-size:30px;line-height:30px;filter:drop-shadow(0 2px 2px #000)}
+@media (max-width:800px){#vLobby,#vResult,#vFinal{grid-template-columns:1fr}.rmap{height:45vh}.mapbox{width:200px;height:160px}}
+
+.walk{position:absolute;left:50%;bottom:18px;transform:translateX(-50%);display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:14px;background:#000a;z-index:6}
+.walk button{width:44px;height:44px;border-radius:50%;border:2px solid #fff8;background:#fff2;color:#fff;font-size:18px}
+.walk button:disabled{opacity:.3}
+.walk span{font-size:12px;color:#ccc;min-width:56px;text-align:center}
+.pnlm-container{background:#000}
+.pnlm-controls-container{top:auto!important;bottom:90px;left:12px}
+
+#mly .mapillary-bearing-indicator-container{display:none}

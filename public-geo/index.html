@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>GeoGuess · class edition</title>
+<link rel="stylesheet" href="/geo/leaflet/leaflet.css">
+<link rel="stylesheet" href="/geo/pannellum/pannellum.css">
+<link rel="stylesheet" href="/geo/mapillary/mapillary.css">
+<link rel="stylesheet" href="/geo/geo.css">
+</head>
+<body>
+<div id="app">
+  <header class="top">
+    <b class="logo">🌍 GeoGuess</b>
+    <span id="hdr" class="hdr"></span>
+    <span id="timer" class="timer hidden"></span>
+  </header>
+
+  <section id="vLobby" class="view hidden">
+    <div class="card lobby">
+      <h1>Class <span id="lCls"></span></h1>
+      <p class="muted">Look at the photo, find the spot on the map, get up to 5000 points per round.</p>
+      <div id="lPlayers" class="players"></div>
+      <div id="lSet" class="settings"></div>
+      <div class="row"><button id="bStart" class="btn big">START GAME</button></div>
+      <p id="lHint" class="muted center"></p>
+    </div>
+    <div class="card chat"><div id="chatList" class="clist"></div><form id="chatForm" class="cform"><input id="chatIn" maxlength="140" autocomplete="off" placeholder="Say something…"><button class="btn">➤</button></form></div>
+  </section>
+
+  <section id="vLoad" class="view hidden"><div class="loader"><div class="globe">🌍</div><p>Finding a place on Earth…</p></div></section>
+
+  <section id="vGuess" class="view hidden">
+    <div id="viewer" class="viewer"><img id="photo" alt="Where is this?"><div id="pano" class="pano hidden"></div><div id="sphere" class="pano hidden"></div><div id="mly" class="pano hidden"></div>
+      <div id="walk" class="walk hidden"><button id="wBack" title="Step back">◀</button><span id="wPos"></span><button id="wFwd" title="Step forward">▶</button><button id="wHome" title="Back to start">⟲</button></div>
+      <div id="thumbs" class="thumbs"></div>
+      <div class="vhint">Scroll or pinch to zoom · drag to look around</div>
+    </div>
+    <div id="mapBox" class="mapbox">
+      <div id="gMap" class="gmap"></div>
+      <button id="bGuess" class="btn guess" disabled>PLACE YOUR PIN</button>
+      <button id="bPin" class="pin" title="Bigger map">⤢</button>
+    </div>
+    <div id="doneBar" class="donebar"></div>
+  </section>
+
+  <section id="vResult" class="view hidden">
+    <div id="rMap" class="rmap"></div>
+    <div class="card rpanel">
+      <h2 id="rTitle"></h2>
+      <div id="rList" class="rlist"></div>
+      <div class="row"><a id="rCredit" class="muted small" target="_blank" rel="noopener"></a></div>
+      <div class="row"><button id="bNext" class="btn hidden">NEXT ROUND ➜</button><span id="rNext" class="muted"></span></div>
+    </div>
+  </section>
+
+  <section id="vFinal" class="view hidden">
+    <div id="fMap" class="rmap"></div>
+    <div class="card rpanel">
+      <h2>🏆 Final standings</h2>
+      <div id="podium" class="podium"></div>
+      <div id="fList" class="rlist"></div>
+      <div class="row"><button id="bAgain" class="btn hidden">PLAY AGAIN</button><button id="bLobby" class="btn ghost hidden">LOBBY</button></div>
+    </div>
+  </section>
+</div>
+<div id="fatal" class="fatal hidden"><div><h1>🌍</h1><p id="fatalTxt"></p></div></div>
+<div id="toast" class="toast hidden"></div>
+<script src="/socket.io/socket.io.js"></script>
+<script src="/geo/leaflet/leaflet.js"></script>
+<script src="/geo/pannellum/pannellum.js"></script>
+<script src="/geo/mapillary/mapillary.js"></script>
+<script src="/geo/geo-client.js"></script>
+</body>
+</html>
