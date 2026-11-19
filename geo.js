@@ -2,6 +2,7 @@
 // Beelden: gratis geotagde foto's van Wikimedia Commons. Optioneel Google Street View als GMAPS_KEY gezet is.
 const express = require("express");
 const path = require("path");
+const DB = require("./db.js");
 
 const UA = "SmartschoolRevealGeo/1.1 (https://github.com/Landaireke/GeoGuessr; school class game) node-fetch";
 const GKEY = process.env.GMAPS_KEY || "";
@@ -191,7 +192,9 @@ module.exports = function geo(app, io, verify) {
 
   function lobby(code, name) {
     let L = lobbies.get(code);
-    if (!L) { L = { id: Math.random().toString(36).slice(2, 10), code, name, players: new Map(), host: null, phase: "lobby", set: { ...DEF }, round: 0, loc: null, until: 0, history: [], chat: [], seq: 0 }; lobbies.set(code, L); }
+    if (!L) { L = { id: Math.random().toString(36).slice(2, 10), code, name, players: new Map(), host: null, phase: "lobby", set: { ...DEF }, round: 0, loc: null, until: 0, history: [], chat: [], seq: 0 }; lobbies.set(code, L);
+      DB.loadSettings("geo", code).then((st) => { if (st && L.phase === "lobby") Object.assign(L.set, st); });
+      DB.top("geo", code).then((t) => { if (t) L.top = t; }); }
     return L;
   }
   const score = (km, region) => Math.round(5000 * Math.exp(-km / (REGIONS[region] || REGIONS.world).scale));
@@ -216,7 +219,11 @@ module.exports = function geo(app, io, verify) {
     res.sort((a, b) => b.pts - a.pts);
     L.last = { lat: L.loc.lat, lon: L.loc.lon, res, credit: L.loc.credit || null };
     L.history.push(L.last);
-    L.phase = L.round >= L.set.rounds ? "final" : "result"; L.until = L.phase === "result" ? now() + 15000 : 0;
+    L.phase = L.round >= L.set.rounds ? "final" : "result";
+    if (L.phase === "final") {
+      const ps = [...L.players.values()].filter((p) => p.inGame), best = Math.max(0, ...ps.map((p) => p.total || 0));
+      DB.addStats("geo", L.code, ps.map((p) => ({ u: p.uid, n: p.name, win: (p.total || 0) === best && best > 0, pts: p.total || 0 }))).then(() => DB.top("geo", L.code)).then((t) => { if (t) { L.top = t; emit(L); } });
+    } L.until = L.phase === "result" ? now() + 15000 : 0;
     emit(L);
   }
   function sys(L, b) { L.chat.push({ id: ++L.seq, n: "", b }); if (L.chat.length > 50) L.chat.shift(); }
@@ -227,10 +234,10 @@ module.exports = function geo(app, io, verify) {
       loc: L.phase === "guess" && L.loc ? (L.loc.kind === "sv" ? { kind: "sv", pano: L.loc.pano } : L.loc.kind === "mly" ? { kind: "mly", id: L.loc.id, token: MLY } : L.loc.kind === "pano" ? { kind: "pano", n: L.loc.steps.length, start: L.loc.start, yaw: L.loc.steps.map((x) => x.yaw) } : { kind: "photo", n: L.loc.photos.length }) : null,
       last: L.phase === "result" || L.phase === "final" ? L.last : null, history: L.phase === "final" ? L.history.map((h) => ({ lat: h.lat, lon: h.lon })) : null,
       pl: [...L.players.values()].map((p) => ({ u: p.uid, n: p.name, c: p.color, h: p.uid === L.host, g: p.inGame, done: !!p.guess, total: p.total || 0, on: !!p.sock })),
-      chat: L.chat.slice(-30),
+      chat: L.chat.slice(-30), top: L.top || [],
     };
   }
-  function emit(L) { for (const p of L.players.values()) p.sock?.emit("s", view(L, p)); }
+  function emit(L) { for (const p of L.players.values()) { if (!p.sock) continue; const v = JSON.stringify(view(L, p)); if (v !== p.last) { p.last = v; p.sock.emit("s", JSON.parse(v)); } } }
   const COLORS = 12;
 
   setInterval(() => {
@@ -265,6 +272,7 @@ module.exports = function geo(app, io, verify) {
       if ([30, 60, 90, 120, 180, 0].includes(d.time)) L.set.time = d.time || 600;
       if (REGIONS[d.region]) L.set.region = d.region;
       if (typeof d.move === "boolean") L.set.move = d.move;
+      DB.saveSettings("geo", L.code, L.set);
       emit(L);
     });
     sock.on("start", () => {

@@ -54,6 +54,7 @@
       $("#lSet").innerHTML = SETS.map(([k, label, opts]) => `<div class="srow"><span>${label}</span><span class="seg">${opts.map(([v, t]) => `<button data-k="${k}" data-v="${v}" class="${String(s.set[k]) === String(v) ? "on" : ""}" ${s.host ? "" : "disabled"}>${t}</button>`).join("")}</span></div>`).join("");
     }
     $("#bStart").classList.toggle("hidden", !s.host);
+    $("#lTop").innerHTML = s.top && s.top.length ? `<b>🏆 Class records</b>` + s.top.slice(0, 5).map((t, i) => `<div>${i + 1}. ${esc(t.n)} — best ${t.b} pts <small class="muted">(${t.w} wins, ${t.g} games)</small></div>`).join("") : "";
     $("#lHint").textContent = s.host ? "You are the host. Pick the settings and press start (you can also play alone)." : "Waiting for the host to start…";
     chat(s);
   }

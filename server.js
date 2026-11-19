@@ -10,7 +10,7 @@ const app = express();
 app.get("/health", (_q, r) => r.send("ok"));
 app.get("/", (_q, r) => r.redirect("/geo/"));
 const srv = http.createServer(app);
-const io = new Server(srv, { cors: { origin: "*" }, pingInterval: 10000, pingTimeout: 20000 });
+const io = new Server(srv, { cors: { origin: "*" }, pingInterval: 10000, pingTimeout: 20000, perMessageDeflate: { threshold: 256 } });
 
 function verify(t) {
   if (!SECRET || typeof t !== "string" || !t.includes(".")) return null;
@@ -25,4 +25,5 @@ function verify(t) {
   } catch { return null; }
 }
 require("./geo")(app, io, verify);
+process.on("SIGTERM", async () => { try { await require("./db.js").flush(); } catch {} process.exit(0); });
 srv.listen(PORT, () => console.log("GeoGuess on port " + PORT));
