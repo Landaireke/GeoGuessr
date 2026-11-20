@@ -28,7 +28,7 @@
     for (const v of ["vLobby", "vLoad", "vGuess", "vResult", "vFinal"]) $("#" + v).classList.add("hidden");
     const me = s.pl.find((p) => p.u === s.me);
     $("#hdr").textContent = s.ph === "lobby" ? `Class ${s.cls} · lobby` : s.ph === "final" ? `Class ${s.cls} · game over` : `Class ${s.cls} · round ${s.round}/${s.set.rounds} · ${me ? me.total : 0} pts`;
-    const tm = $("#timer"); tm.classList.toggle("hidden", !(s.ph === "guess" && s.set.time < 600)); tm.textContent = fmt(s.left); tm.classList.toggle("low", s.left <= 10);
+    const tm = $("#timer"); tm.classList.toggle("hidden", !(s.ph === "guess" && s.set.time < 600)); tm.textContent = s.waiting ? "⏳" : fmt(s.left); tm.classList.toggle("low", !s.waiting && s.left <= 10);
     if (s.ph === "lobby") lobbyView(s);
     else if (s.ph === "loading") $("#vLoad").classList.remove("hidden");
     else if (s.ph === "guess") guessView(s, changed, me);
@@ -67,6 +67,22 @@
   }
   $("#chatForm").addEventListener("submit", (e) => { e.preventDefault(); const v = $("#chatIn").value.trim(); if (v) sock.emit("chat", v); $("#chatIn").value = ""; });
 
+  /* ---------- loading cover + "I can see the photo" ---------- */
+  let readyRound = 0, slowT = 0, flat = false;
+  const GL = (() => { try { const c = document.createElement("canvas"); return !!(c.getContext("webgl") || c.getContext("experimental-webgl")); } catch { return false; } })();
+  function cover(on) { $("#vcover").classList.toggle("hidden", !on); }
+  function ready() { if (!S || S.ph !== "guess" || readyRound === S.round) return; readyRound = S.round; clearTimeout(slowT); cover(false); sock.emit("ready", S.round); }
+  // flat copy of the 360° photo (no WebGL, or the viewer stays black)
+  function showFlat(s, why) {
+    if (!s.loc.thumb) { ready(); return toast(why || "This photo could not be loaded"); }
+    flat = true;
+    for (const id of ["#sphere", "#mly", "#walk", "#pano"]) $(id).classList.add("hidden");
+    $("#photo").classList.remove("hidden"); $("#thumbs").innerHTML = "";
+    $(".vhint").textContent = "Drag to look around · scroll to zoom";
+    const im = $("#photo"); im.onload = () => { fit(); ready(); }; im.onerror = () => ready(); im.src = `/geo/thumb/${s.room}/${s.round}`;
+    if (why) toast(why);
+  }
+
   /* ---------- guessing ---------- */
   let gMap = null, gPin = null, myGuess = null, cur = 0, zoom = 1, pan = { x: 0, y: 0 }, pano = null;
   function guessView(s, changed, me) {
@@ -83,6 +99,8 @@
       setTimeout(() => gMap.invalidateSize(), 50);
       $("#bGuess").disabled = true; $("#bGuess").textContent = "PLACE YOUR PIN";
       $("#mly").classList.add("hidden");
+      cover(true); flat = false; readyRound = 0; clearTimeout(slowT);
+      slowT = setTimeout(() => { if (readyRound !== S.round && S.ph === "guess" && S.loc?.kind === "mly") showFlat(S, "The 360° viewer is slow on this computer, showing a photo instead."); }, 9000);
       if (s.loc.kind === "mly") showMly(s); else if (s.loc.kind === "sv") showPano(s); else if (s.loc.kind === "pano") showSphere(s); else showPhotos(s);
     }
     const d = done();
@@ -107,7 +125,8 @@
     const keep = sphere ? { yaw: sphere.getYaw(), pitch: sphere.getPitch(), hfov: sphere.getHfov() } : { yaw: 0, pitch: 0, hfov: 100 };
     if (sphere) { try { sphere.destroy(); } catch {} }
     sphere = pannellum.viewer("sphere", { type: "equirectangular", panorama: url, autoLoad: true, showControls: true, showFullscreenCtrl: false, compass: false, hfov: keep.hfov, yaw: keep.yaw, pitch: keep.pitch, minHfov: 40, maxHfov: 120 });
-    sphere.on("error", () => { if (q === "hd") loadStep(s, "sd"); });
+    sphere.on("error", () => { if (q === "hd") loadStep(s, "sd"); else ready(); });
+    sphere.on("load", ready);
     $("#wPos").textContent = `${step - s.loc.start >= 0 ? "+" : ""}${step - s.loc.start} steps`;
     $("#wBack").disabled = step <= 0; $("#wFwd").disabled = step >= s.loc.n - 1;
   }
@@ -125,6 +144,7 @@
   // Mapillary viewer: walk anywhere with the arrows, like Street View
   let mly = null;
   function showMly(s) {
+    if (!GL) return showFlat(s, "Your computer can't show 360° photos, showing a flat photo instead.");
     for (const id of ["#photo", "#pano", "#sphere", "#walk"]) $(id).classList.add("hidden");
     $("#thumbs").innerHTML = ""; $("#mly").classList.remove("hidden");
     $(".vhint").textContent = s.set.move ? "Drag to look around · double-click where you want to go" : "Drag to look around · scroll to zoom";
@@ -132,8 +152,9 @@
       // no sequence player (that one walks by itself); arrows + double-click like Street View
       mly = new mapillary.Viewer({ accessToken: s.loc.token, container: "mly", imageId: s.loc.id, component: { cover: false, bearing: false, zoom: true, sequence: false, direction: s.set.move, spatial: false, image: true, keyboard: { keyPlay: false, keySequenceNavigation: false } } });
       mly.on("dblclick", (e) => { if (S?.loc?.kind === "mly" && S.set.move) mlyWalk(e); });
+      mly.on("image", (e) => { if (S?.loc?.kind === "mly" && e.image && e.image.id === S.loc.id) setTimeout(ready, 250); });
     } else {
-      mly.moveTo(s.loc.id).catch(() => {});
+      mly.moveTo(s.loc.id).then(() => setTimeout(ready, 250)).catch(() => showFlat(S, "This 360° photo could not be loaded, showing a flat photo instead."));
       s.set.move ? mly.activateComponent("direction") : mly.deactivateComponent("direction");
     }
     setTimeout(() => mly && mly.resize(), 100);
@@ -173,17 +194,18 @@
   }
   $("#thumbs").addEventListener("click", (e) => { const b = e.target.closest("[data-i]"); if (!b) return; cur = +b.dataset.i; document.querySelectorAll("#thumbs button").forEach((x) => x.classList.toggle("on", x === b)); loadPhoto(`/geo/img/${S.room}/${S.round}/${cur}`); });
   function loadPhoto(url) {
-    const im = $("#photo"); im.onload = fit; im.src = url;
+    const im = $("#photo"); im.onload = () => { fit(); ready(); }; im.onerror = ready; im.src = url;
   }
   function fit() { const im = $("#photo"), v = $("#viewer"); zoom = Math.min(v.clientWidth / im.naturalWidth, v.clientHeight / im.naturalHeight); pan = { x: 0, y: 0 }; apply(); }
   function apply() { const im = $("#photo"); im.style.transform = `translate(${pan.x - (im.naturalWidth * zoom) / 2}px,${pan.y - (im.naturalHeight * zoom) / 2}px) scale(${zoom})`; }
-  addEventListener("resize", () => { if (S?.ph === "guess" && S.loc?.kind === "photo") fit(); });
+  const isFlat = () => S?.loc?.kind === "photo" || flat;
+  addEventListener("resize", () => { if (S?.ph === "guess" && isFlat()) fit(); });
   const viewer = $("#viewer"); let drag = null;
-  viewer.addEventListener("wheel", (e) => { if (S?.loc?.kind !== "photo") return; e.preventDefault(); const k = e.deltaY < 0 ? 1.15 : 1 / 1.15; zoom = Math.min(6, Math.max(0.1, zoom * k)); pan.x *= k; pan.y *= k; apply(); }, { passive: false });
-  viewer.addEventListener("pointerdown", (e) => { if (e.target.closest(".thumbs") || S?.loc?.kind !== "photo") return; drag = { x: e.clientX, y: e.clientY, px: pan.x, py: pan.y }; viewer.setPointerCapture(e.pointerId); });
+  viewer.addEventListener("wheel", (e) => { if (!isFlat()) return; e.preventDefault(); const k = e.deltaY < 0 ? 1.15 : 1 / 1.15; zoom = Math.min(6, Math.max(0.1, zoom * k)); pan.x *= k; pan.y *= k; apply(); }, { passive: false });
+  viewer.addEventListener("pointerdown", (e) => { if (e.target.closest(".thumbs") || !isFlat()) return; drag = { x: e.clientX, y: e.clientY, px: pan.x, py: pan.y }; viewer.setPointerCapture(e.pointerId); });
   viewer.addEventListener("pointermove", (e) => { if (!drag) return; pan.x = drag.px + e.clientX - drag.x; pan.y = drag.py + e.clientY - drag.y; apply(); });
   viewer.addEventListener("pointerup", () => (drag = null));
-  viewer.addEventListener("dblclick", () => { zoom *= 1.8; pan.x *= 1.8; pan.y *= 1.8; apply(); });
+  viewer.addEventListener("dblclick", () => { if (!isFlat()) return; zoom *= 1.8; pan.x *= 1.8; pan.y *= 1.8; apply(); });
 
   // optional: Google Street View (only when the server has a Google key)
   let gLoaded = null;
@@ -192,7 +214,7 @@
     if (!gLoaded) gLoaded = new Promise((res) => { window.__gcb = res; const sc = document.createElement("script"); sc.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(s.gkey)}&callback=__gcb`; document.head.appendChild(sc); });
     gLoaded.then(() => {
       const opt = { pano: s.loc.pano, addressControl: false, showRoadLabels: false, linksControl: !!S.set.move, clickToGo: !!S.set.move, fullscreenControl: false, motionTracking: false };
-      if (!pano) pano = new google.maps.StreetViewPanorama($("#pano"), opt); else { pano.setPano(s.loc.pano); pano.setOptions(opt); }
+      if (!pano) pano = new google.maps.StreetViewPanorama($("#pano"), opt); else { pano.setPano(s.loc.pano); pano.setOptions(opt); } setTimeout(ready, 800);
     });
   }
 

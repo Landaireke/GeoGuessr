@@ -82,3 +82,7 @@ button{font:inherit;cursor:pointer}
 #mly{position:relative}
 .walkdot{position:absolute;width:44px;height:44px;margin:-22px 0 0 -22px;border-radius:50%;border:3px solid #fff;box-shadow:0 0 12px #0008;pointer-events:none;z-index:5;animation:walkdot .7s ease-out forwards}
 @keyframes walkdot{from{transform:scale(.3);opacity:1}to{transform:scale(1.4);opacity:0}}
+/* loading cover: hides the previous round's photo until the new one is on screen */
+.vcover{position:absolute;inset:0;z-index:6;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:radial-gradient(circle at 50% 40%,#1b2a44,#070b14);color:#cfe3ff;font:600 16px system-ui}
+.vcover .spin{width:54px;height:54px;border-radius:50%;border:5px solid #ffffff22;border-top-color:#4dd8ff;animation:vspin .9s linear infinite}
+@keyframes vspin{to{transform:rotate(360deg)}}

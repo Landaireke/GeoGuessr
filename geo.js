@@ -90,7 +90,10 @@ async function mlyNear(lat, lon) {
   if (!good.length) return null;
   const seq = good[Math.floor(Math.random() * good.length)].sort((a, b) => (a.properties.captured_at || 0) - (b.properties.captured_at || 0));
   const f = seq[2 + Math.floor(Math.random() * (seq.length - 4))], g = f.toGeoJSON(t.x, t.y, t.z).geometry.coordinates;
-  return { kind: "mly", id: String(f.properties.id), lat: g[1], lon: g[0], credit: `https://www.mapillary.com/app/?pKey=${f.properties.id}` };
+  // a flat copy of the photo, for computers that can't show the 360° viewer (no WebGL) or when it stays black
+  let thumb = null;
+  try { const j = await (await fetch(`https://graph.mapillary.com/${f.properties.id}?fields=thumb_2048_url&access_token=${MLY}`)).json(); thumb = j.thumb_2048_url || null; } catch {}
+  return { kind: "mly", id: String(f.properties.id), lat: g[1], lon: g[0], thumb, credit: `https://www.mapillary.com/app/?pKey=${f.properties.id}` };
 }
 async function streetView(lat, lon) {
   const u = `https://maps.googleapis.com/maps/api/streetview/metadata?location=${lat},${lon}&radius=30000&source=outdoor&key=${GKEY}`;
@@ -118,6 +121,7 @@ async function pickLocation(region) {
   return findLocation(region, 16);
 }
 async function findLocation(region, maxTries) {
+  if (process.env.GEO_MOCK === "mly") return { kind: "mly", id: "1", lat: 50.85, lon: 4.35, thumb: "mockthumb", credit: "https://www.mapillary.com" };
   if (process.env.GEO_MOCK === "pano") return { kind: "pano", lat: 50.85, lon: 4.35, start: 1, steps: [0, 1, 2].map(() => ({ hd: "mockpano", sd: "mockpano", yaw: 0 })), credit: "https://panoramax.xyz" };
   if (process.env.GEO_MOCK) return { kind: "photo", lat: 50.85 + Math.random(), lon: 4.35 + Math.random(), photos: ["mock", "mock"], credit: "https://commons.wikimedia.org" };
   const R = REGIONS[region] || REGIONS.world;
@@ -177,6 +181,16 @@ module.exports = function geo(app, io, verify) {
       r.set("Content-Type", "image/jpeg").set("Cache-Control", "private, max-age=600").send(buf);
     } catch { r.sendStatus(502); }
   });
+  app.get("/geo/thumb/:room/:round", async (q, r) => {
+    const L = [...lobbies.values()].find((x) => x.id === q.params.room), loc = L && L.loc;
+    if (!loc || loc.kind !== "mly" || !loc.thumb || String(L.round) !== q.params.round || L.phase !== "guess") return r.sendStatus(404);
+    try {
+      if (loc.thumb === "mockthumb") return r.sendFile("/tmp/aut/mockpano.jpg");
+      let buf = imgCache.get(loc.thumb);
+      if (!buf) { const f = await fetch(loc.thumb); if (!f.ok) return r.sendStatus(502); buf = Buffer.from(await f.arrayBuffer()); imgCache.set(loc.thumb, buf); if (imgCache.size > 10) imgCache.delete(imgCache.keys().next().value); }
+      r.set("Content-Type", "image/jpeg").set("Cache-Control", "private, max-age=600").send(buf);
+    } catch { r.sendStatus(502); }
+  });
   app.get("/geo/health", (_q, r) => r.json({ pools: Object.fromEntries(Object.entries(pools).map(([k, v]) => [k, v.map((l) => l.kind + (l.steps ? ":" + l.steps.length : ""))])) }));
 
   const nsp = io.of("/geo");
@@ -196,11 +210,13 @@ module.exports = function geo(app, io, verify) {
 
   async function nextRound(L) {
     L.phase = "loading"; L.round++; L.loc = null; emit(L);
-    const loc = await pickLocation(L.set.region);
+    const pre = L.nextLoc && L.nextLoc.region === L.set.region ? L.nextLoc.p : null; L.nextLoc = null;
+    const loc = (pre && (await pre.catch(() => null))) || (await pickLocation(L.set.region));
     if (!lobbies.has(L.code)) return;
     if (!loc) { L.phase = "lobby"; L.round = 0; sys(L, "⚠️ Geen foto's gevonden, probeer opnieuw."); return emit(L); }
-    L.loc = loc; L.phase = "guess"; L.until = now() + L.set.time * 1000; L.started = now();
-    for (const p of L.players.values()) p.guess = null;
+    // the clock only starts once everybody's photo is on screen (or after 12 s at most)
+    L.loc = loc; L.phase = "guess"; L.until = 0; L.waitUntil = now() + 12000; L.started = now();
+    for (const p of L.players.values()) { p.guess = null; p.ready = 0; }
     emit(L);
   }
   function endRound(L) {
@@ -219,14 +235,15 @@ module.exports = function geo(app, io, verify) {
       const ps = [...L.players.values()].filter((p) => p.inGame), best = Math.max(0, ...ps.map((p) => p.total || 0));
       DB.addStats("geo", L.code, ps.map((p) => ({ u: p.uid, n: p.name, win: (p.total || 0) === best && best > 0, pts: p.total || 0 }))).then(() => DB.top("geo", L.code)).then((t) => { if (t) { L.top = t; emit(L); } });
     } L.until = L.phase === "result" ? now() + 15000 : 0;
+    if (L.phase === "result") { const p = pickLocation(L.set.region); p.catch(() => {}); L.nextLoc = { region: L.set.region, p }; } // next place is searched while you look at the scores
     emit(L);
   }
   function sys(L, b) { L.chat.push({ id: ++L.seq, n: "", b }); if (L.chat.length > 50) L.chat.shift(); }
   function view(L, me) {
     const t = now();
     return {
-      ph: L.phase, cls: L.name, host: L.host === me.uid, me: me.uid, set: L.set, round: L.round, left: L.until ? Math.max(0, Math.ceil((L.until - t) / 1000)) : 0, room: L.id, gkey: L.loc && L.loc.kind === "sv" ? GKEY : null,
-      loc: L.phase === "guess" && L.loc ? (L.loc.kind === "sv" ? { kind: "sv", pano: L.loc.pano } : L.loc.kind === "mly" ? { kind: "mly", id: L.loc.id, token: MLY } : L.loc.kind === "pano" ? { kind: "pano", n: L.loc.steps.length, start: L.loc.start, yaw: L.loc.steps.map((x) => x.yaw) } : { kind: "photo", n: L.loc.photos.length }) : null,
+      ph: L.phase, cls: L.name, host: L.host === me.uid, me: me.uid, set: L.set, round: L.round, left: L.until ? Math.max(0, Math.ceil((L.until - t) / 1000)) : L.phase === "guess" ? L.set.time : 0, waiting: L.phase === "guess" && !L.until, room: L.id, gkey: L.loc && L.loc.kind === "sv" ? GKEY : null,
+      loc: L.phase === "guess" && L.loc ? (L.loc.kind === "sv" ? { kind: "sv", pano: L.loc.pano } : L.loc.kind === "mly" ? { kind: "mly", id: L.loc.id, token: MLY, thumb: !!L.loc.thumb } : L.loc.kind === "pano" ? { kind: "pano", n: L.loc.steps.length, start: L.loc.start, yaw: L.loc.steps.map((x) => x.yaw) } : { kind: "photo", n: L.loc.photos.length }) : null,
       last: L.phase === "result" || L.phase === "final" ? L.last : null, history: L.phase === "final" ? L.history.map((h) => ({ lat: h.lat, lon: h.lon })) : null,
       pl: [...L.players.values()].map((p) => ({ u: p.uid, n: p.name, c: p.color, h: p.uid === L.host, g: p.inGame, done: !!p.guess, total: p.total || 0, on: !!p.sock })),
       chat: L.chat.slice(-30), top: L.top || [],
@@ -241,7 +258,8 @@ module.exports = function geo(app, io, verify) {
       if (!L.players.size) { lobbies.delete(L.code); continue; }
       if (!L.players.has(L.host)) L.host = L.players.keys().next().value;
       const inG = [...L.players.values()].filter((p) => p.inGame);
-      if (L.phase === "guess" && (now() >= L.until || (inG.length && inG.every((p) => p.guess)))) endRound(L);
+      if (L.phase === "guess" && !L.until && (now() >= L.waitUntil || inG.filter((p) => p.sock).every((p) => p.ready === L.round))) { L.until = now() + L.set.time * 1000; emit(L); }
+      if (L.phase === "guess" && ((L.until && now() >= L.until) || (inG.length && inG.every((p) => p.guess)))) endRound(L);
       else if (L.phase === "result" && now() >= L.until) nextRound(L);
       else emit(L);
     }
@@ -283,6 +301,7 @@ module.exports = function geo(app, io, verify) {
       if (!(lat >= -90 && lat <= 90 && lon >= -540 && lon <= 540)) return;
       p.guess = { lat, lon: ((lon + 540) % 360) - 180 }; emit(L);
     });
+    sock.on("ready", (r) => { if (L.phase === "guess" && +r === L.round) { p.ready = L.round; } });
     sock.on("chat", (b) => { b = clean(b, 140); if (!b) return; L.chat.push({ id: ++L.seq, n: p.name, c: p.color, b }); if (L.chat.length > 50) L.chat.shift(); emit(L); });
     sock.on("disconnect", () => { if (p.sock === sock) { p.sock = null; p.goneAt = now(); emit(L); } });
   });
