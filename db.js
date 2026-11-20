@@ -22,6 +22,9 @@ module.exports = {
   },
   addStats: (game, code, rows) => rows.length ? rpc("srv_stats_add", { p_game: game, p_code: code, p_rows: rows }) : null,
   top: (game, code) => rpc("srv_stats_top", { p_game: game, p_code: code }),
+  saveState: (game, code, data) => rpc("srv_state_save", { p_game: game, p_code: code, p_data: data }),
+  loadState: (game) => rpc("srv_state_load", { p_game: game }),
+  dropState: (game, code) => rpc("srv_state_drop", { p_game: game, p_code: code }),
   // on shutdown: write everything that is still waiting
   flush: () => Promise.all([...pending.values()].map((j) => { clearTimeout(j.t); return j.run(); })),
 };

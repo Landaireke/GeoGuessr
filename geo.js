@@ -195,6 +195,9 @@ module.exports = function geo(app, io, verify) {
 
   const nsp = io.of("/geo");
   const lobbies = new Map();
+  // full state to Supabase on shutdown / every 2 min; put back after a restart
+  const P = require("./persist.js")("geo", lobbies, { revive(L) { if (L.phase === "loading") { L.round--; setTimeout(() => nextRound(L), 500); } } });
+  geo.shutdown = P.shutdown;
   const now = () => Date.now();
   const clean = (s, n) => String(s ?? "").replace(/[\u0000-\u001f]/g, "").trim().slice(0, n);
   const DEF = { rounds: 5, time: 90, region: "world", move: true };
@@ -255,7 +258,7 @@ module.exports = function geo(app, io, verify) {
   setInterval(() => {
     for (const L of lobbies.values()) {
       for (const p of L.players.values()) if (!p.sock && now() - p.goneAt > 60000) L.players.delete(p.uid);
-      if (!L.players.size) { lobbies.delete(L.code); continue; }
+      if (!L.players.size) { lobbies.delete(L.code); P.drop(L.code); continue; }
       if (!L.players.has(L.host)) L.host = L.players.keys().next().value;
       const inG = [...L.players.values()].filter((p) => p.inGame);
       if (L.phase === "guess" && !L.until && (now() >= L.waitUntil || inG.filter((p) => p.sock).every((p) => p.ready === L.round))) { L.until = now() + L.set.time * 1000; emit(L); }
@@ -265,7 +268,8 @@ module.exports = function geo(app, io, verify) {
     }
   }, 1000);
 
-  nsp.on("connection", (sock) => {
+  nsp.on("connection", async (sock) => {
+    await P.restored;
     const tk = verify(sock.handshake.auth?.t);
     if (!tk) { sock.emit("fatal", "Your ticket is invalid or expired. Open the game again from the extension."); return sock.disconnect(true); }
     const L = lobby(tk.c, clean(tk.cn || tk.c, 40));

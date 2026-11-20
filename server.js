@@ -25,5 +25,5 @@ function verify(t) {
   } catch { return null; }
 }
 require("./geo")(app, io, verify);
-process.on("SIGTERM", async () => { try { await require("./db.js").flush(); } catch {} process.exit(0); });
+process.on("SIGTERM", async () => { try { await (require("./geo").shutdown?.() || require("./db.js").flush()); } catch {} process.exit(0); });
 srv.listen(PORT, () => console.log("GeoGuess on port " + PORT));
